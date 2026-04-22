@@ -14,7 +14,7 @@ def text_hash(instruction, input_text):
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-# Utility function to save a list of records as JSONL, which are list of dictionaries.
+# Utility function to save a list of records as JSONL.
 def write_jsonl(path, records):
     with open(path, "w", encoding="utf-8") as f:
         for rec in records:
