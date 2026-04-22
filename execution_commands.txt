@@ -23,6 +23,11 @@ python scripts/train_cyberinstruct.py 2>&1 | tee logs/train_cyberinstruct_13b.lo
 
 
 # --- 3. Evaluate CyberInstruct-7B ---
+export MAMBA_ROOT_PREFIX=/opt/micromamba
+eval "$($HOME/.local/bin/micromamba shell hook -s bash)"
+micromamba activate cybertrain310
+cd /workspace
+
 python src/evaluation.py \
   --model cyberinstruct-7b \
   --model_type causal \
@@ -34,6 +39,11 @@ python src/evaluation.py \
 
 
 # --- 4. Evaluate CyberInstruct-13B ---
+export MAMBA_ROOT_PREFIX=/opt/micromamba
+eval "$($HOME/.local/bin/micromamba shell hook -s bash)"
+micromamba activate cybertrain310
+cd /workspace
+
 python src/evaluation.py \
   --model cyberinstruct-13b \
   --model_type causal \
