@@ -92,8 +92,7 @@ ALPACA_TEMPLATE = (
     "### Response:\n{output}"
 )
 
-# This function takes the raw examples from the dataset and formats them according to the Alpaca template, which is a common format for instruction-following fine-tuning. 
-# Each example will be transformed into a string that includes the instruction, input, and output in a structured way that the model can learn from during training.
+# This function takes the raw examples from the dataset and formats them according to the Alpaca template.
 def format_examples(examples):
     return [
         ALPACA_TEMPLATE.format(
@@ -108,7 +107,7 @@ def format_examples(examples):
         )
     ]
 
-# Configure the PEFT QLoRA settings. The configuration employed is taken from the CyberInstruct&CyberBnech paper.
+# Configure the PEFT QLoRA settings.
 peft_config = LoraConfig(
     r=16,
     lora_alpha=32,
