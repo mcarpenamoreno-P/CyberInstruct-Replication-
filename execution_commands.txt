@@ -1,0 +1,48 @@
+########################################################################
+#                  CYBERINSTRUCT: TRAIN & EVALUATE                     #
+########################################################################
+
+# --- 1. TRAIN CyberInstruct-7B ---
+export BASE_MODEL=/workspace/models/llama-2-7b-hf
+export OUTPUT_DIR=/workspace/models/cyberinstruct-7b
+export TRAIN_FILE=/workspace/data/cyberinstruct_train.jsonl
+export VAL_FILE=/workspace/data/cyberinstruct_val.jsonl
+export SEED=42
+
+python scripts/train_cyberinstruct.py 2>&1 | tee logs/train_cyberinstruct_7b.log
+
+
+# --- 2. TRAIN CyberInstruct-13B ---
+export BASE_MODEL=/workspace/models/llama-2-13b-hf
+export OUTPUT_DIR=/workspace/models/cyberinstruct-13b
+export TRAIN_FILE=/workspace/data/cyberinstruct_train.jsonl
+export VAL_FILE=/workspace/data/cyberinstruct_val.jsonl
+export SEED=42
+
+python scripts/train_cyberinstruct.py 2>&1 | tee logs/train_cyberinstruct_13b.log
+
+
+# --- 3. Evaluate CyberInstruct-7B ---
+python src/evaluation.py \
+  --model cyberinstruct-7b \
+  --model_type causal \
+  --lora \
+  --quantization 4bit \
+  --embedding all-mpnet-base-v2 \
+  --datasets cyberbench \
+  2>&1 | tee logs/eval_cyberinstruct_7b.log
+
+
+# --- 4. Evaluate CyberInstruct-13B ---
+python src/evaluation.py \
+  --model cyberinstruct-13b \
+  --model_type causal \
+  --lora \
+  --quantization 4bit \
+  --embedding all-mpnet-base-v2 \
+  --datasets cyberbench \
+  2>&1 | tee logs/eval_cyberinstruct_13b.log
+
+########################################################################
+#                          PROCESS COMPLETE                            #
+########################################################################

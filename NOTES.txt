@@ -1,0 +1,122 @@
+####---------------------- SETUP CHARACTERISTICS ----------------------####
+|                                                                      |
+|   Cluster: Nvidia DGX-Spark 2                                        |                                                
+|   Host workspace: ~/cyberinstruct_exp                                |
+|   Models dir: ~/dgx_models                                           |
+|                                                                      |
+|   Base models: Llama-2-7B-hf / Llama-2-13B-hf                        |
+|   Embedding model: all-mpnet-base-v2                                 |
+|                                                                      |
+|   Host env: cyberhost310 (micromamba)                                |
+|   Container env: cybertrain310 (micromamba)                          |
+|                                                                      |
+|   Training method: QLoRA 4-bit (NF4)                                 |
+|   LoRA target modules: q_proj / k_proj / v_proj / o_proj             |
+|   Trainer: TRL SFTTrainer + SFTConfig                                |
+|                                                                      |
+|   Data for SFT: CyberBench train split + MMLU auxiliary_train        |
+|   Eval mode: CyberBench + semantic retrieval with all-mpnet-base-v2  |
+|                                                                      |
+####------------------------------------------------------------------####
+
+####------------------------ FILES STRUCTURE -------------------------####
+| ~/cyberinstruct_exp/                                                 |
+|    ├── src/                                                          |
+|    │   ├── data.py                                                   |
+|    │   ├── evaluation.py                                             |
+|    │   ├── mc_data.py                                                |
+|    │   ├── ner_data.py                                               |
+|    │   ├── sum_data.py                                               |
+|    │   ├── tc_data.py                                                |
+|    │   └── utils.py                                                  |
+|    │                                                                 |
+|    ├── scripts/                                                      |
+|    │   ├── build_sft_data.py                                         |
+|    │   └── train_cyberinstruct.py                                    |
+|    │                                                                 |
+|    ├── data/                                                         |
+|    │   ├── cyberbench.csv                                            |
+|    │   ├── cyberinstruct_train.jsonl                                 |
+|    │   └── mmlu_subjects_used.json                                   |
+|    │                                                                 |
+|    ├── logs/                                                         |
+|    ├── outputs/                                                      |
+|    ├── requirements.train.txt                                        |
+|    └── Dockerfile.train                                              |
+####------------------------------------------------------------------####
+
+IMPORTANT NOTES: 
+
+- Original github repo was not cloned for using the original .py.
+
+- Files in /src were uploaded from local and the following modifications were made:
+    > data.py : Imports were added with try/except fallbacks so that the code works both as a module (from .x import ...) and when imported directly (from x import ...). The original version only supported simple imports.
+                Create the data/ directory using os.makedirs("data", exist_ok=True) before proceeding.
+                Web optional: download_web() now returns a boolean, displays a warning if it fails, and only loads Web if data/tc/web/dataset_phishing.csv exists. In the original, download_web() and get_df_web() were always called unconditionally.
+                The construction of dfs is changed: now append() is used and can omit web; the original created a fixed list with the 10 dataframes.
+                The JSON is now written with encoding="utf-8" and ensure_ascii=False; the original performed a basic json.dump().
+                The final split count is more robust: if train, val, or test is missing, it is filled with 0 before reordering columns. In the original, it was assumed that all three were always present.
+
+    > evaluation.py: Final split count is more robust: if train, val, or test is missing, it is filled with 0 before reordering columns. In the original, it was assumed that all three were always present.
+                    The important nuance is that it still assumes that --datasets cyberbench implies the complete fixed list (cyner, aptner, cynews, secmmlu, cyquiz, mitre, cve, web, email, http). That aligns with the original, but now conflicts with your data.py, because you do allow web to be missing.
+                    Change AutoTokenizer.from_pretrained(model_path) to AutoTokenizer.from_pretrained(model_path, use_fast=False) to use the Python slow version of the tokenizer.
+                    Use device_map = {"":0} to avoid offload to CPU/disk with bitsandbytes.
+
+    > mc_data.py : A relative import with a fallback was added, just like in data.py. The original used only `from utils import ...`.
+                    The downloads (download_secmmlu, download_cyquiz) are now idempotent: they only download if the file doesn’t exist. In the original, they always downloaded.
+                    combine_choices() now operates on a copy of the dataframe and uses isinstance(answer, str); the original modified the dataframe directly and checked type(answer) == str.
+                    load_cyquiz_data() now opens with encoding="utf-8", strips the question text, and better safeguards the parsing of options with data["choices"]. This is consistent with your comment that it previously failed due to parsing issues.
+
+    > ner_data.py : A new function to read files with various encodings is added (utf-8, utf-8-sig, latin-1, cp1252), which didn’t exist in the original. This directly addresses decoding/parsing issues.
+                    It is also added the filter_matching_token_tag_lengths() to discard rows where tokens and tags don’t have the same length. The original didn’t have that explicit filter.
+                    It is separated the NER formatting logic into format_ner_output_from_lists() and left format_ner_output() as a compatible wrapper.
+                    CyNER/APTNER downloads now only occur if the file does not exist; the original always called urlretrieve().
+                    Significant internal refactoring in the APTNER parsing: more helper functions (process_aptner_lines, process_aptner_tokens, get_formatted_tag, etc.), which makes the parsing more controlled and maintainable than the original version.
+                    In get_df_cyner() and get_df_aptner(), it is tightened up the cleaning process: text-based deduplication, filtering out sequences that are too short, and filtering token/tag lengths before generating labels and outputs.
+
+    > sum_data.py: A relative import with a fallback is added.
+                    download_cynews() is now idempotent: if the final CSV already exists, it does not download or convert it again. The original version downloaded and converted directly.
+                    After converting the .xlsx, you now delete the temporary Excel file if it exists.
+                    get_df_cynews() is cleaner: renaming to input/output, explicit column selection, and cleaning up _x0081_ as before, but with a more robust preparation path.
+
+    > tc_data.py : Relative imports with fallbacks are added and generic urllib with urllib.error/urllib.request are replaced.
+                    All download_* functions are now idempotent: they only download if the file is missing. In the original, they always downloaded.
+                    The biggest change is in download_web(): it now checks if dataset_phishing.csv already exists, tries the original ZIP first, cleans up temporary files if it fails, and also uses an alternative mirror on GitHub before giving up. The original simply downloaded the S3 ZIP, unzipped it, and renamed the CSV.
+                    get_df_web() now validates that the CSV exists, normalizes the status label (0/1, legit, etc.) to legitimate/phishing, and filters out invalid values. The original version simply renamed the file and continued.
+                    get_df_email() now removes Unnamed:* columns, filters empty entries more carefully, and normalizes labels (safe, legitimate, ham → safe; phishing, spam → phishing). The original used index_col=0, cleaned up less, and only performed a .lower().replace('email','').
+                    load_http_data() now opens with encoding="utf-8", errors="replace"; the original opened without explicit encoding/error checking.
+                    In get_df_cve(), reset_index() is replaced with reset_index(drop=True), preventing an extra index column from slipping in.
+                    Instruction block tweaked the email, though that affects the prompt more than the parsing.
+                    get_df_cve() contained examples whose output were not mapped correctly to a certain label, so after doing stratify=True, NaN appeared as label. In order to fix this, the preprocessing was tightened to:
+                        - Output normalization.
+                        - Severities-only filtering: low, medium, high, critical.
+                        - NaN-label rows deleted before split.
+
+    > utils.py : Imports and removed global variables that were in the original (datasets = {}, instruction_datasets = {}, and other unused imports) are cleaned up.
+                    split_dataset() now, if stratify=True, explicitly validates that the label column exists; the original simply assumed it was there.
+                    Copies are made (df_train = df_train.copy(), etc.) before assigning the split, which avoids warnings and side effects. The original wrote directly to the partitions.
+                    assign_instructions() no longer uses the mutable default instructions=[None]; it now uses instructions=None and fills it internally. That is a clear improvement over the original.
+                    In assign_instructions() and drop_long_sequences(), you also make defensive copies of the dataframe before modifying columns.
+                    Two robustness improvements were made.
+
+                        - First, split_dataset() was hardened so that, when stratify=True, it checks whether the label column contains NaN. If so, it raises a clearer error earlier.
+
+                        - Second, drop_long_sequences() was made safer so that it does not fail if it receives an empty dataset.
+
+
+    
+- Host uses micromamba env: cyberhost310
+
+- Container uses micromamba env: cybertrain310
+
+- all-mpnet-base-v2 is used only in evaluation
+
+- build_sft_data was corrected in order to:
+    > Delete overlaps train/test from train to avoid data leakage 
+    > Load MMLU by subject 
+    > Generate cyberinstruct_train.jsonl
+    
+- train_cyberinstruct.py was corrected in order to:
+    > Use  device_map={"": 0}
+    > Prepare the model for k-bit Training
+    > Train correctly with QLoRA

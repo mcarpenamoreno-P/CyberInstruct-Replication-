@@ -1,0 +1,14 @@
+outputs/
+logs/
+data/
+__pycache__/
+*.pyc
+.env
+.hf/
+.cache/
+
+models/**/checkpoint-*/
+models/**/optimizer.pt
+models/**/scheduler.pt
+models/**/trainer_state.json
+models/**/rng_state.pth

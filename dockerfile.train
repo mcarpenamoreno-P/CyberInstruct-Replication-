@@ -1,0 +1,21 @@
+FROM nvcr.io/nvidia/pytorch:25.10-py3
+
+RUN apt-get update && apt-get install -y curl git bzip2 build-essential cmake && rm -rf /var/lib/apt/lists/*
+
+RUN curl -Ls https://micro.mamba.pm/install.sh | bash
+
+SHELL ["/bin/bash", "-lc"]
+
+ENV MAMBA_ROOT_PREFIX=/opt/micromamba
+ENV PATH=/opt/micromamba/envs/cybertrain310/bin:$PATH
+
+COPY requirements.train.txt /tmp/requirements.train.txt
+
+RUN export MAMBA_ROOT_PREFIX=/opt/micromamba && \
+    eval "$($HOME/.local/bin/micromamba shell hook -s bash)" && \
+    micromamba create -y -n cybertrain310 python=3.10 && \
+    micromamba install -y -n cybertrain310 -c conda-forge faiss-cpu=1.7.2 && \
+    micromamba run -n cybertrain310 python -m pip install --upgrade "pip<26" "setuptools<82" wheel && \
+    micromamba run -n cybertrain310 pip install -r /tmp/requirements.train.txt
+
+WORKDIR /workspace
